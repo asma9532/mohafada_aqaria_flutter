@@ -1,0 +1,48 @@
+name: mohafada_aqaria
+description: تطبيق المحافظة العقارية أولاد جلال
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  
+  google_fonts: ^6.1.0
+  provider: ^6.1.1
+  url_launcher: ^6.2.4
+  shared_preferences: ^2.2.2
+  http: ^1.1.0  # ✅ هذه أهم حزمة للـ API
+  file_picker: ^8.1.4
+  image_picker: ^1.1.2
+  flutter_colorpicker: ^1.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/fonts/
+    - assets/images/
+  
+  fonts:
+    - family: NotoSansArabic
+      fonts:
+        - asset: assets/fonts/NotoSansArabic-Thin.ttf
+          weight: 100
+        - asset: assets/fonts/NotoSansArabic-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansArabic-Bold.ttf
+          weight: 700
+    - family: NotoColorEmoji
+      fonts:
+        - asset: assets/fonts/NotoColorEmoji.ttf
