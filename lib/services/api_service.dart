@@ -14,6 +14,34 @@ class ApiService {
   static const String logoutEndpoint = '$baseUrl/logout';
   static const String clientEndpoint = '$baseUrl/user';
 
+  // ========== دالة CSRF Cookie الجديدة ==========
+  static Future<bool> fetchCsrfCookie() async {
+    try {
+      print('🔄 جلب CSRF Cookie...');
+      
+      final response = await http.get(
+        Uri.parse('$baseUrl/sanctum/csrf-cookie'),
+        headers: {
+          'Accept': 'application/json',
+        },
+      );
+      
+      print('📨 حالة CSRF Cookie: ${response.statusCode}');
+      print('📨 الـ Cookies المستلمة: ${response.headers['set-cookie']}');
+      
+      // مهم: نخزن الكوكيز يدوياً
+      if (response.headers.containsKey('set-cookie')) {
+        final cookies = response.headers['set-cookie'];
+        print('✅ الكوكيز: $cookies');
+      }
+      
+      return response.statusCode == 204;
+    } catch (e) {
+      print('❌ خطأ في جلب CSRF Cookie: $e');
+      return false;
+    }
+  }
+
   // حفظ التوكن
   static Future<void> saveToken(String token) async {
     print('💾 حفظ التوكين: $token');
@@ -130,6 +158,9 @@ class ApiService {
       print('🔄 محاولة تسجيل الدخول...');
       print('📤 البريد: $email');
       
+      // ✅ جلب CSRF Cookie أولاً
+      await fetchCsrfCookie();
+      
       final response = await http.post(
         Uri.parse(loginEndpoint),
         headers: await _getPublicHeaders(),
@@ -161,6 +192,9 @@ class ApiService {
     try {
       print('🔄 محاولة إنشاء حساب...');
       print('📤 البيانات: fullName=$fullName, email=$email, phone=$phone');
+      
+      // ✅ جلب CSRF Cookie أولاً
+      await fetchCsrfCookie();
       
       final response = await http.post(
         Uri.parse(registerEndpoint),
@@ -217,38 +251,67 @@ class ApiService {
     }
   }
 
-  // ========== USERS (المستخدمين) - بالمصادقة الآن ✅ ==========
-
-  static Future<Map<String, dynamic>> getNewUsers(String filter) async {
-  try {
-    final token = await getToken();
-    
-    final response = await http.get(
-      Uri.parse('$baseUrl/users/new?filter=$filter'),
-      headers: await _getAuthHeaders(),
-    );
-
-    print('📨 getNewUsers Status: ${response.statusCode}');
-    
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+  // ========== ADMIN LOGIN ==========
+  static Future<Map<String, dynamic>> adminLogin(String email, String password) async {
+    try {
+      print('🔄 محاولة تسجيل دخول الأدمن...');
+      print('📤 البريد: $email');
       
-      // ✅ البيانات ترجع مباشرة كـ array أو كـ {success, data}
-      if (data is List) {
-        return {'success': true, 'data': data};
-      } else if (data['data'] != null) {
-        return {'success': true, 'data': data['data']}; // ← مش data['data']['data']
+      // ✅ جلب CSRF Cookie أولاً
+      await fetchCsrfCookie();
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/admin/login'),
+        headers: await _getPublicHeaders(),
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+
+      final result = await _handleResponse(response);
+      
+      if (result['success'] == true) {
+        if (result['token'] != null) {
+          await saveToken(result['token']);
+        }
+        return result;
       } else {
-        return {'success': true, 'data': []};
+        return result;
       }
-    } else {
-      return {'success': false, 'message': 'خطأ: ${response.statusCode}'};
+    } catch (e) {
+      print('🔥 خطأ في الاتصال: $e');
+      return {'success': false, 'message': 'حدث خطأ في الاتصال بالخادم: $e'};
     }
-  } catch (e) {
-    print('🔥 خطأ في getNewUsers: $e');
-    return {'success': false, 'message': e.toString()};
   }
-}
+
+  // ========== USERS (المستخدمين) ==========
+  static Future<Map<String, dynamic>> getNewUsers(String filter) async {
+    try {
+      final token = await getToken();
+      
+      final response = await http.get(
+        Uri.parse('$baseUrl/users/new?filter=$filter'),
+        headers: await _getAuthHeaders(),
+      );
+
+      print('📨 getNewUsers Status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        
+        if (data is List) {
+          return {'success': true, 'data': data};
+        } else if (data['data'] != null) {
+          return {'success': true, 'data': data['data']};
+        } else {
+          return {'success': true, 'data': []};
+        }
+      } else {
+        return {'success': false, 'message': 'خطأ: ${response.statusCode}'};
+      }
+    } catch (e) {
+      print('🔥 خطأ في getNewUsers: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
 
   static Future<Map<String, dynamic>> getUserStats() async {
     try {
@@ -259,7 +322,7 @@ class ApiService {
       
       final response = await http.get(
         Uri.parse('$baseUrl/users/stats'),
-        headers: await _getAuthHeaders(), // ✅ مصحح: يستخدم AuthHeaders الآن
+        headers: await _getAuthHeaders(),
       );
 
       print('📨 getUserStats Status: ${response.statusCode}');
@@ -276,7 +339,7 @@ class ApiService {
     }
   }
   
-  // ========== NEGATIVE CERTIFICATE ==========
+  // ========== باقي الدوال (نفس ما كانت) ==========
   static Future<Map<String, dynamic>> submitNegativeCertificate(Map<String, dynamic> data) async {
     try {
       print('🔄 إرسال طلب شهادة سلبية...');
@@ -286,7 +349,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/negative-certificate'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -297,8 +360,6 @@ class ApiService {
     }
   }
   
-  // ========== REAL ESTATE CARD REQUESTS ==========
-
   static Future<Map<String, dynamic>> submitRealEstateCardRequest(Map<String, dynamic> data) async {
     try {
       print('🔄 إرسال طلب بطاقة عقارية...');
@@ -308,7 +369,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/documents-request'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -332,8 +393,6 @@ class ApiService {
     }
   }
   
-  // ========== CONTRACT EXTRACTS (مستخرجات العقود) ==========
-
   static Future<Map<String, dynamic>> submitContractExtract(Map<String, dynamic> data) async {
     try {
       print('🔄 إرسال طلب مستخرج عقد...');
@@ -343,7 +402,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/contract-extract'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -367,8 +426,6 @@ class ApiService {
     }
   }
   
-  // ========== PROPERTY BOOK (الدفتر العقاري) ==========
-
   static Future<Map<String, dynamic>> submitPropertyBookRequest(Map<String, dynamic> data) async {
     try {
       print('🔄 إرسال طلب إنشاء دفتر عقاري...');
@@ -378,7 +435,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/property-book'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -398,7 +455,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/property-book-copy'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -422,8 +479,6 @@ class ApiService {
     }
   }
 
-  // ========== PROPERTY BOOK WITH FILES ==========
-
   static Future<Map<String, dynamic>> submitPropertyBookWithFiles(
     Map<String, dynamic> data,
     List<Map<String, dynamic>> files,
@@ -442,14 +497,12 @@ class ApiService {
         if (token != null) 'Authorization': 'Bearer $token',
       });
 
-      // إضافة الحقول النصية
       data.forEach((key, value) {
         if (value != null) {
           request.fields[key] = value.toString();
         }
       });
 
-      // إضافة الملفات
       for (var i = 0; i < files.length; i++) {
         final file = files[i];
         final bytes = file['bytes'] as List<int>;
@@ -475,8 +528,6 @@ class ApiService {
     }
   }
 
-  // ========== APPOINTMENT (حجز المواعيد) ==========
-
   static Future<Map<String, dynamic>> submitAppointment(Map<String, dynamic> data) async {
     try {
       print('🔄 إرسال طلب حجز موعد...');
@@ -486,7 +537,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/appointment'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -497,8 +548,6 @@ class ApiService {
     }
   }
 
-  // ========== CONTACT (اتصل بنا) ==========
-
   static Future<Map<String, dynamic>> submitContact(Map<String, dynamic> data) async {
     try {
       print('🔄 إرسال رسالة اتصال...');
@@ -508,7 +557,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/contact'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -598,33 +647,4 @@ class ApiService {
       return {'success': false, 'message': e.toString()};
     }
   }
- 
-
-// ✅ دالة جديدة خاصة بالأدمن
-static Future<Map<String, dynamic>> adminLogin(String email, String password) async {
-  try {
-    print('🔄 محاولة تسجيل دخول الأدمن...');
-    print('📤 البريد: $email');
-    
-    final response = await http.post(
-      Uri.parse('$baseUrl/admin/login'), // 👈 route جديدة
-      headers: await _getPublicHeaders(),
-      body: jsonEncode({'email': email, 'password': password}),
-    );
-
-    final result = await _handleResponse(response);
-    
-    if (result['success'] == true) {
-      if (result['token'] != null) {
-        await saveToken(result['token']);
-      }
-      return result;
-    } else {
-      return result;
-    }
-  } catch (e) {
-    print('🔥 خطأ في الاتصال: $e');
-    return {'success': false, 'message': 'حدث خطأ في الاتصال بالخادم: $e'};
-  }
-}
 }
