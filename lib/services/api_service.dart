@@ -6,13 +6,29 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // 🔴 استخدم عنوان IP الخاص بك
-  static const String baseUrl = 'https://mohafadaaqaria-production-9f70.up.railway.app';
+ static const String baseUrl = 'https://mohafadaaqaria-production-9f70.up.railway.app/api';
 
   // Endpoints
   static const String loginEndpoint = '$baseUrl/login';
   static const String registerEndpoint = '$baseUrl/register';
   static const String logoutEndpoint = '$baseUrl/logout';
   static const String clientEndpoint = '$baseUrl/user';
+
+  // ✅ دالة جديدة لجلب CSRF Cookie (الحل السحري)
+  static Future<bool> fetchCsrfCookie() async {
+    try {
+      print('🔄 جلب CSRF Cookie...');
+      final response = await http.get(
+        Uri.parse('$baseUrl/sanctum/csrf-cookie'),
+        headers: {'Accept': 'application/json'},
+      );
+      print('✅ CSRF Cookie تم جلبه (${response.statusCode})');
+      return response.statusCode == 204; // 204 يعني نجاح بدون محتوى
+    } catch (e) {
+      print('❌ خطأ في جلب CSRF Cookie: $e');
+      return false;
+    }
+  }
 
   // حفظ التوكن
   static Future<void> saveToken(String token) async {
@@ -130,6 +146,9 @@ class ApiService {
       print('🔄 محاولة تسجيل الدخول...');
       print('📤 البريد: $email');
       
+      // ✅ الأهم: جلب CSRF Cookie أولاً
+      await fetchCsrfCookie();
+      
       final response = await http.post(
         Uri.parse(loginEndpoint),
         headers: await _getPublicHeaders(),
@@ -161,6 +180,9 @@ class ApiService {
     try {
       print('🔄 محاولة إنشاء حساب...');
       print('📤 البيانات: fullName=$fullName, email=$email, phone=$phone');
+      
+      // ✅ جلب CSRF Cookie أولاً
+      await fetchCsrfCookie();
       
       final response = await http.post(
         Uri.parse(registerEndpoint),
@@ -217,38 +239,71 @@ class ApiService {
     }
   }
 
-  // ========== USERS (المستخدمين) - بالمصادقة الآن ✅ ==========
+  // ========== ADMIN ==========
+
+  // ✅ دالة تسجيل دخول الأدمن مع CSRF
+  static Future<Map<String, dynamic>> adminLogin(String email, String password) async {
+    try {
+      print('🔄 محاولة تسجيل دخول الأدمن...');
+      print('📤 البريد: $email');
+      
+      // ✅ جلب CSRF Cookie أولاً
+      await fetchCsrfCookie();
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/admin/login'),
+        headers: await _getPublicHeaders(),
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+
+      final result = await _handleResponse(response);
+      
+      if (result['success'] == true) {
+        if (result['token'] != null) {
+          await saveToken(result['token']);
+        }
+        return result;
+      } else {
+        return result;
+      }
+    } catch (e) {
+      print('🔥 خطأ في الاتصال: $e');
+      return {'success': false, 'message': 'حدث خطأ في الاتصال بالخادم: $e'};
+    }
+  }
+
+  // ========== USERS (المستخدمين) ==========
 
   static Future<Map<String, dynamic>> getNewUsers(String filter) async {
-  try {
-    final token = await getToken();
-    
-    final response = await http.get(
-      Uri.parse('$baseUrl/users/new?filter=$filter'),
-      headers: await _getAuthHeaders(),
-    );
-
-    print('📨 getNewUsers Status: ${response.statusCode}');
-    
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+    try {
+      final token = await getToken();
       
-      // ✅ البيانات ترجع مباشرة كـ array أو كـ {success, data}
-      if (data is List) {
-        return {'success': true, 'data': data};
-      } else if (data['data'] != null) {
-        return {'success': true, 'data': data['data']}; // ← مش data['data']['data']
+      final response = await http.get(
+        Uri.parse('$baseUrl/users/new?filter=$filter'),
+        headers: await _getAuthHeaders(),
+      );
+
+      print('📨 getNewUsers Status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        
+        // ✅ البيانات ترجع مباشرة كـ array أو كـ {success, data}
+        if (data is List) {
+          return {'success': true, 'data': data};
+        } else if (data['data'] != null) {
+          return {'success': true, 'data': data['data']}; // ← مش data['data']['data']
+        } else {
+          return {'success': true, 'data': []};
+        }
       } else {
-        return {'success': true, 'data': []};
+        return {'success': false, 'message': 'خطأ: ${response.statusCode}'};
       }
-    } else {
-      return {'success': false, 'message': 'خطأ: ${response.statusCode}'};
+    } catch (e) {
+      print('🔥 خطأ في getNewUsers: $e');
+      return {'success': false, 'message': e.toString()};
     }
-  } catch (e) {
-    print('🔥 خطأ في getNewUsers: $e');
-    return {'success': false, 'message': e.toString()};
   }
-}
 
   static Future<Map<String, dynamic>> getUserStats() async {
     try {
@@ -259,7 +314,7 @@ class ApiService {
       
       final response = await http.get(
         Uri.parse('$baseUrl/users/stats'),
-        headers: await _getAuthHeaders(), // ✅ مصحح: يستخدم AuthHeaders الآن
+        headers: await _getAuthHeaders(),
       );
 
       print('📨 getUserStats Status: ${response.statusCode}');
@@ -286,7 +341,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/negative-certificate'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -308,7 +363,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/documents-request'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -343,7 +398,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/contract-extract'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -378,7 +433,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/property-book'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -398,7 +453,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/property-book-copy'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -486,7 +541,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/appointment'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -508,7 +563,7 @@ class ApiService {
       
       final response = await http.post(
         Uri.parse('$baseUrl/contact'),
-        headers: await _getAuthHeaders(), // ✅ يستخدم AuthHeaders
+        headers: await _getAuthHeaders(),
         body: jsonEncode(data),
       );
 
@@ -598,33 +653,4 @@ class ApiService {
       return {'success': false, 'message': e.toString()};
     }
   }
- 
-
-// ✅ دالة جديدة خاصة بالأدمن
-static Future<Map<String, dynamic>> adminLogin(String email, String password) async {
-  try {
-    print('🔄 محاولة تسجيل دخول الأدمن...');
-    print('📤 البريد: $email');
-    
-    final response = await http.post(
-      Uri.parse('$baseUrl/admin/login'), // 👈 route جديدة
-      headers: await _getPublicHeaders(),
-      body: jsonEncode({'email': email, 'password': password}),
-    );
-
-    final result = await _handleResponse(response);
-    
-    if (result['success'] == true) {
-      if (result['token'] != null) {
-        await saveToken(result['token']);
-      }
-      return result;
-    } else {
-      return result;
-    }
-  } catch (e) {
-    print('🔥 خطأ في الاتصال: $e');
-    return {'success': false, 'message': 'حدث خطأ في الاتصال بالخادم: $e'};
-  }
-}
 }
