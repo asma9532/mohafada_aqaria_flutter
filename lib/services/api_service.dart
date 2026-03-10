@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // 🔴 استخدم عنوان IP الخاص بك
- static const String baseUrl = 'https://mohafadaaqaria-production-9f70.up.railway.app/api';
+static const String baseUrl = 'https://mohafadaaqaria-production-9f70.up.railway.app/api';
 
   // Endpoints
   static const String loginEndpoint = '$baseUrl/login';
